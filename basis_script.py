@@ -104,10 +104,21 @@ for idx, timestamp in enumerate(scene_ts):
     # write out
     out_fname = f"{timestamp.split(' ')[0]}_{aoi_name}_WGS84.tiff"
 
+    # plot RGB
+    f, ax = plt.subplots(dpi=300)
+    scene.plot_multiple_bands(['B04', 'B03', 'B02'], ax=ax)
+    ax.set_title(f'{timestamp}')
+    ax.axis('off')
+    geom.to_crs(epsg=scene[scene.band_names[0]].geo_info.epsg).boundary.plot(ax=ax)
+    f.savefig(out_dir.joinpath(out_fname.replace('.tiff', '.png')))
+    plt.close(f)
+
     # NDVI
-    scene.calc_si('ndvi', inplace=True)
+    if 'NDVI' not in scene.band_names:
+        scene.calc_si('ndvi', inplace=True)
 
     # reproject to wgs84 for web mercator plotting
+    # here could be a problem ...
     scene_wgs84 = scene.reproject(
         target_crs=4326)
 
