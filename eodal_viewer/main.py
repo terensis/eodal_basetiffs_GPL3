@@ -1,56 +1,80 @@
 """
 Main script of the EODAL Viewer application.
+
+Author: Lukas Valentin Graf (lukas.graf@terensis.io)
+Date: 2023-10-06
+License: GPLv3
 """
 
 import eodal
 import geopandas as gpd
-import matplotlib.pyplot as plt
 import numpy as np
 import warnings
 
 from datetime import datetime, timedelta
 from eodal.core.band import Band
-from eodal.core.scene import SceneCollection
 from eodal.core.sensors import Sentinel2
 from eodal.mapper.filter import Filter
 from eodal.mapper.feature import Feature
 from eodal.mapper.mapper import Mapper, MapperConfigs
 from eodal.config import get_settings
 from pathlib import Path
-from shapely.geometry import box
+    
+from eodal_viewer.utils import (
+    get_latest_scene,
+    indicate_complete,
+    make_output_dir_scene,
+    preprocess_sentinel2_scenes,
+    post_process_scene,
+    set_latest_scene,
+    SceneProcessedException
+)
 
-from eodal_viewer.utils import preprocess_sentinel2_scenes
+
+# define constants
+class Constants:
+    # name of the collection to query (Sentinel-2)
+    COLLECTION: str = 'sentinel2-msi'
+
+    # filters to apply to the metadata
+    # - only scenes with less than 80% cloudy pixels
+    # - only scenes with processing level 'Level-2A'
+    METADATA_FILTERS: list[Filter] = [
+        Filter('cloudy_pixel_percentage', '<', 80),
+        Filter('processing_level', '==', 'Level-2A')
+    ]
+
+    # kwargs for the scene constructor
+    # - scene_constructor: constructor of the scene class
+    # - scene_constructor_kwargs: kwargs for the scene constructor
+    # - scene_modifier: function to modify the scene after loading
+    SCENE_KWARGS: dict = {
+        'scene_constructor': Sentinel2.from_safe,
+        'scene_constructor_kwargs': {
+            'band_selection': ['B02', 'B03', 'B04', 'B08'],
+            'read_scl': True,
+            'apply_scaling': False},
+        'scene_modifier': preprocess_sentinel2_scenes
+    }
+
+    # start date of the time period to query if no time period
+    # is specified
+    START_DATE: datetime = datetime(2017, 1, 1)
+
 
 # setup logging and usage of STAC API for data access
 settings = get_settings()
 settings.USE_STAC = True
 logger = settings.logger
 
-# global variables
-COLLECTION = 'sentinel2-msi'
-METADATA_FILTERS = [
-    Filter('cloudy_pixel_percentage', '<', 80),
-    Filter('processing_level', '==', 'Level-2A')
-]
-SCENE_KWARGS = {
-    'scene_constructor': Sentinel2.from_safe,
-    'scene_constructor_kwargs': {
-        'band_selection': ['B02', 'B03', 'B04', 'B08'],
-        'read_scl': True,
-        'apply_scaling': False},
-    'scene_modifier': preprocess_sentinel2_scenes
-}
-
 # ignore warnings
 warnings.filterwarnings('ignore')
 
 
 def fetch_data(
-    time_start: datetime,
-    time_end: datetime,
     output_dir: Path,
     mapper_configs: MapperConfigs
-):
+) -> None:
     """
     Fetch Sentinel-2 data for a given time period and geographic extent
     and apply post-processing steps to obtain RGB, FCIR, and NDVI images
@@ -69,11 +93,18 @@ def fetch_data(
     mapper.query_scenes()
     # check if scenes are available
     if mapper.metadata.empty:
-        logger.info('No scenes found')
+        # if there are no scenes we must fake the folder
+        # structure to let the extraction script continue
+        first_timestamp = mapper.mapper_configs.time_start
+        last_timestamp = mapper.mapper_configs.time_end
+        set_latest_scene(output_dir, timestamp=last_timestamp)
+        logger.info(
+            f'No data found {first_timestamp.date()} ' +
+            f'and {last_timestamp.date()}')
         return
 
     # load the data. This is the actual download step
-    mapper.load_scenes(scene_kwargs=SCENE_KWARGS)
+    mapper.load_scenes(scene_kwargs=Constants.SCENE_KWARGS)
 
     # Loop over the scenes in the collection.
     # Each scene is stored in a separate sub-directory named by
@@ -85,8 +116,14 @@ def fetch_data(
     # - NDVI image (normalized difference vegetation index)
     for timestamp, s2_scene in mapper.data:
         # create the output directory
-        output_dir_scene = output_dir.joinpath(f'{timestamp.date()}')
-        output_dir_scene.mkdir(parents=True, exist_ok=True)
+        try:
+            output_dir_scene = make_output_dir_scene(
+                output_dir=output_dir,
+                timestamp=timestamp
+            )
+        except SceneProcessedException as e:
+            logger.info(e)
+            continue
 
         # post-process the scene
         # This means:
@@ -152,8 +189,11 @@ def fetch_data(
         fpath_cloudy_pixel_percentage = output_dir_scene.joinpath(
             f'{timestamp.date()}_cloudy_pixel_percentage.txt'
         )
+        cloudy_pixel_percentage = s2_scene.get_cloudy_pixel_percentage(
+            cloud_classes=[3, 8, 9]
+        )
         with open(fpath_cloudy_pixel_percentage, 'w') as f:
-            f.write(f'{s2_scene.get_cloudy_pixel_percentage():.1f}')
+            f.write(f'{cloudy_pixel_percentage:.1f}')
 
         # write the scene metadata to disk
         fpath_metadata = output_dir_scene.joinpath(
@@ -173,11 +213,8 @@ def fetch_data(
 
         # write a file termed "complete" to disk to indicate
         # that the scene has been processed successfully
-        fpath_complete = output_dir_scene.joinpath(
-            f'complete.txt'
-        )
-        with open(fpath_complete, 'w') as f:
-            f.write('complete')
+        set_latest_scene(output_dir, timestamp=timestamp)
+        indicate_complete(output_dir_scene)
 
         logger.info(f'Processed scene {timestamp.date()}')
 
@@ -199,18 +236,8 @@ def monitor_folder(
     :param feature: Feature object of the area of interest
     :param temporal_increment_days: temporal increment in days
     """
-    # list all sub-directories (i.e., scenes) in the folder
-    sub_dirs = sorted(folder_to_monitor.glob('*'))
-    # exclude the sub-directories that do not contain a file
-    # termed "complete.txt" and exclude the "log" sub-directory
-    sub_dirs = [
-        sub_dir.name for sub_dir in sub_dirs
-        if sub_dir.joinpath('complete.txt').exists()
-        and sub_dir.name != 'log'
-    ]
-    # get the last processed scene. The start time for the next query
-    # will be the time stamp of the last processed scene plus 1 day
-    last_processed_scene = datetime.strptime(sub_dirs[-1], '%Y-%m-%d')
+    # get the latest scene to determine the start date
+    last_processed_scene = get_latest_scene(folder_to_monitor)
     time_start = last_processed_scene + timedelta(days=1)
     # the end time for the next query will be the time stamp of the
     # last processed scene plus the temporal increment
@@ -218,18 +245,16 @@ def monitor_folder(
 
     # setup the Mapper
     mapper_configs = MapperConfigs(
-        collection=COLLECTION,
+        collection=Constants.COLLECTION,
         time_start=time_start,
         time_end=time_end,
-        metadata_filters=METADATA_FILTERS,
+        metadata_filters=Constants.METADATA_FILTERS,
         feature=feature
     )
 
     # fetch data
     try:
         fetch_data(
-            time_start,
-            time_end,
             folder_to_monitor,
             mapper_configs
         )
@@ -243,17 +268,17 @@ if __name__ == '__main__':
     # ---------- test setup ----------
 
     # define directory to monitor
-    directory_to_monitor = Path('data')
+    directory_to_monitor = Path('../data')
     directory_to_monitor.mkdir(parents=True, exist_ok=True)
 
     # define area of interest
     # test region: canton of Schaffhausen
-    fpath_aoi = Path('data/canton_sh.gpkg')
+    fpath_aoi = Path('../data/canton_sh.gpkg')
 
     # read the data and buffer it by 10km in LV95 (EPSG:2056)
     # projection
     aoi = gpd.read_file(fpath_aoi).dissolve().to_crs(epsg=2056).buffer(10000)
-    feature = Feature.from_geoseries(canton_sh)
+    feature = Feature.from_geoseries(aoi)
 
     monitor_folder(
         folder_to_monitor=directory_to_monitor,
