@@ -142,16 +142,19 @@ def fetch_data(
         fpath_rgb = output_dir_scene.joinpath(f'{timestamp.date()}_rgb.tif')
         s2_scene.to_rasterio(
             band_selection=['red', 'green', 'blue'],
-            fpath_raster=fpath_rgb
+            fpath_raster=fpath_rgb,
+            as_cog=True
         )
 
         # save the cloud mask as GeoTIFF
         fpath_cloud_mask = output_dir_scene.joinpath(
-            f'{timestamp.date()}_cloud_mask.tif'
+            f'{timestamp.date()}_cloud_mask.tif',
+            as_cog=True
         )
         s2_scene.to_rasterio(
             band_selection=['cloud_mask'],
-            fpath_raster=fpath_cloud_mask
+            fpath_raster=fpath_cloud_mask,
+            as_cog=True
         )
 
         # save the FCIR bands as GeoTIFF
@@ -160,7 +163,8 @@ def fetch_data(
         )
         s2_scene.to_rasterio(
             band_selection=['nir_1', 'red', 'green'],
-            fpath_raster=fpath_fcir
+            fpath_raster=fpath_fcir,
+            as_cog=True
         )
 
         # save the NDVI as GeoTIFF
@@ -169,7 +173,8 @@ def fetch_data(
         )
         s2_scene.to_rasterio(
             band_selection=['ndvi'],
-            fpath_raster=fpath_ndvi
+            fpath_raster=fpath_ndvi,
+            as_cog=True
         )
 
         # write the cloudy pixel percentage to disk
