@@ -6,7 +6,9 @@ Date: 2023-10-06
 License: GPLv3
 """
 
+import eodal
 import numpy as np
+import yaml
 
 from datetime import datetime
 from eodal.core.band import Band
@@ -165,3 +167,51 @@ def set_latest_scene(
     """
     with open(output_dir.joinpath('latest_scene'), 'w+') as f:
         f.write(f'{timestamp.date()}')
+
+
+def write_cloudy_pixel_percentage(
+    s2_scene: Sentinel2,
+    fpath_cloudy_pixel_percentage: Path
+) -> None:
+    """
+    Write the percentage of cloudy pixels in a Sentinel-2 scene
+    to disk.
+
+    :param s2_scene:
+        Sentinel-2 scene
+    :param fpath_cloudy_pixel_percentage:
+        path to the file where the cloudy pixel percentage
+        should be written to
+    """
+    # calculate the percentage of cloudy pixels
+    cloudy_pixel_percentage = s2_scene.get_cloudy_pixel_percentage(
+            cloud_classes=[3, 8, 9]
+        )
+
+    # write the percentage of cloudy pixels to disk
+    with open(fpath_cloudy_pixel_percentage, 'w') as f:
+        f.write(f'{cloudy_pixel_percentage:.1f}')
+
+
+def write_scene_metadata(
+    s2_scene: Sentinel2,
+    fpath_metadata: Path
+) -> None:
+    """
+    Write scene metadata to disk in YAML format.
+
+    :param s2_scene:
+        Sentinel-2 scene
+    :param fpath_metadata:
+        path to the metadata file
+    """
+    metadata = {
+        'product_uri': s2_scene.scene_properties.product_uri,
+        'sensing_time': str(s2_scene.scene_properties.sensing_time),
+        'processing_level': s2_scene.scene_properties.processing_level.value,
+        'eodal_version': eodal.__version__
+    }
+
+    # save as YAML
+    with open(fpath_metadata, 'w+') as f:
+        yaml.dump(metadata, f, default_flow_style=False)
