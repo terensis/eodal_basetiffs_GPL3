@@ -6,13 +6,10 @@ Date: 2023-10-06
 License: GPLv3
 """
 
-import eodal
 import geopandas as gpd
-import numpy as np
 import warnings
 
 from datetime import datetime, timedelta
-from eodal.core.band import Band
 from eodal.core.sensors import Sentinel2
 from eodal.mapper.filter import Filter
 from eodal.mapper.feature import Feature
@@ -27,7 +24,9 @@ from eodal_viewer.utils import (
     preprocess_sentinel2_scenes,
     post_process_scene,
     set_latest_scene,
-    SceneProcessedException
+    SceneProcessedException,
+    write_cloudy_pixel_percentage,
+    write_scene_metadata
 )
 
 
@@ -123,6 +122,9 @@ def fetch_data(
             )
         except SceneProcessedException as e:
             logger.info(e)
+            # increase the time stamp to the last processed scene
+            # and continue
+            set_latest_scene(output_dir, timestamp=timestamp)
             continue
 
         # post-process the scene
@@ -162,54 +164,28 @@ def fetch_data(
         )
 
         # save the NDVI as GeoTIFF
-        # To do so, scale the NDVI by 10000 and add 10000 to avoid
-        # negative values so that the NDVI can be stored
-        # as uint16 to save disk space
-        ndvi_as_uint16 = (s2_scene['ndvi'] * 10000 + 10000).values.astype(np.uint16)
-        # set scale and offset for the NDVI
-        scale = 1 / 10000
-        offset = -10000
-        # create a new band object
-        ndvi_band = Band(
-            band_name='ndvi',
-            band_alias='ndvi',
-            values=ndvi_as_uint16,
-            geo_info=s2_scene['ndvi'].geo_info,
-            scale=scale,
-            offset=offset,
-            nodata=0
-        )
-        # write the NDVI to disk
         fpath_ndvi = output_dir_scene.joinpath(
             f'{timestamp.date()}_ndvi.tif'
         )
-        ndvi_band.to_rasterio(fpath_raster=fpath_ndvi)
+        s2_scene.to_rasterio(
+            band_selection=['ndvi'],
+            fpath_raster=fpath_ndvi
+        )
 
         # write the cloudy pixel percentage to disk
         fpath_cloudy_pixel_percentage = output_dir_scene.joinpath(
             f'{timestamp.date()}_cloudy_pixel_percentage.txt'
         )
-        cloudy_pixel_percentage = s2_scene.get_cloudy_pixel_percentage(
-            cloud_classes=[3, 8, 9]
+        write_cloudy_pixel_percentage(
+            s2_scene,
+            fpath_cloudy_pixel_percentage
         )
-        with open(fpath_cloudy_pixel_percentage, 'w') as f:
-            f.write(f'{cloudy_pixel_percentage:.1f}')
 
         # write the scene metadata to disk
         fpath_metadata = output_dir_scene.joinpath(
-            f'{timestamp.date()}_metadata.txt'
+            f'{timestamp.date()}_metadata.yaml'
         )
-        product_uri = s2_scene.scene_properties.product_uri
-        sensing_time = s2_scene.scene_properties.sensing_time
-        processing_level = s2_scene.scene_properties.processing_level
-        creation_time = datetime.now()
-        eodal_version = eodal.__version__
-        with open(fpath_metadata, 'w') as f:
-            f.write(f'product_uri: {product_uri}\n')
-            f.write(f'sensing_time: {sensing_time}\n')
-            f.write(f'processing_level: {processing_level}\n')
-            f.write(f'creation_time: {creation_time}\n')
-            f.write(f'eodal_version: {eodal_version}\n')
+        write_scene_metadata(s2_scene, fpath_metadata)
 
         # write a file termed "complete" to disk to indicate
         # that the scene has been processed successfully
@@ -266,14 +242,17 @@ def monitor_folder(
 if __name__ == '__main__':
 
     # ---------- test setup ----------
+    import os
+    cwd = Path(__file__).parents[1].absolute()
+    os.chdir(cwd)
 
     # define directory to monitor
-    directory_to_monitor = Path('../data')
+    directory_to_monitor = Path('data')
     directory_to_monitor.mkdir(parents=True, exist_ok=True)
 
     # define area of interest
     # test region: canton of Schaffhausen
-    fpath_aoi = Path('../data/canton_sh.gpkg')
+    fpath_aoi = cwd.joinpath('data/canton_sh.gpkg')
 
     # read the data and buffer it by 10km in LV95 (EPSG:2056)
     # projection
