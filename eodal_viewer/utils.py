@@ -169,6 +169,25 @@ def set_latest_scene(
         f.write(f'{timestamp.date()}')
 
 
+def scale_ndvi(s2_scene: Sentinel2) -> None:
+    """
+    Scale the NDVI to UINT16 and add it to the scene.
+
+    :param s2_scene:
+        Sentinel-2 scene
+    """
+    ndvi_scaled = s2_scene['ndvi'].values * 10000 + 10000  # scale to uint16
+    s2_scene.add_band(
+        Band,
+        'ndvi_scaled',
+        ndvi_scaled.astype(np.uint16),
+        nodata=0,
+        scale=0.0001,
+        offset=-1,
+        geo_info=s2_scene['ndvi'].geo_info
+    )
+
+
 def write_cloudy_pixel_percentage(
     s2_scene: Sentinel2,
     fpath_cloudy_pixel_percentage: Path

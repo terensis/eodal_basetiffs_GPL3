@@ -23,6 +23,7 @@ from eodal_viewer.utils import (
     make_output_dir_scene,
     preprocess_sentinel2_scenes,
     post_process_scene,
+    scale_ndvi,
     set_latest_scene,
     SceneProcessedException,
     write_cloudy_pixel_percentage,
@@ -148,8 +149,7 @@ def fetch_data(
 
         # save the cloud mask as GeoTIFF
         fpath_cloud_mask = output_dir_scene.joinpath(
-            f'{timestamp.date()}_cloud_mask.tif',
-            as_cog=True
+            f'{timestamp.date()}_cloud_mask.tif'
         )
         s2_scene.to_rasterio(
             band_selection=['cloud_mask'],
@@ -171,8 +171,11 @@ def fetch_data(
         fpath_ndvi = output_dir_scene.joinpath(
             f'{timestamp.date()}_ndvi.tif'
         )
+        # calculate the scaled NDVI
+        scale_ndvi(s2_scene)
+
         s2_scene.to_rasterio(
-            band_selection=['ndvi'],
+            band_selection=['ndvi_scaled'],
             fpath_raster=fpath_ndvi,
             as_cog=True
         )
