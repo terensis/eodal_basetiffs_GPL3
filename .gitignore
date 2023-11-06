@@ -161,4 +161,7 @@ cython_debug/
 
 # ignore data folder
 data/
-WITZ/
+*.tiff
+
+/.project
+/.pydevproject
