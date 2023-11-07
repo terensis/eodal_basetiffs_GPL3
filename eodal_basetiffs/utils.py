@@ -13,6 +13,7 @@ import yaml
 from datetime import datetime
 from eodal.core.band import Band
 from eodal.core.raster import RasterCollection
+from eodal.core.sensors import Landsat, Sentinel2
 from pathlib import Path
 
 
@@ -105,7 +106,7 @@ def post_process_scene(
     scene.calc_si('ndvi', inplace=True)
 
     # Sentinel-2
-    if scene.scene_properties.platform.startswith('S2'):
+    if isinstance(scene, Sentinel2):
         # generate a binary cloud mask from the Scene Classification
         # Layer (SCL) that is part of the standard ESA product.
         # SCL classes that will be treated as clouds are:
@@ -119,7 +120,7 @@ def post_process_scene(
         # i.e., scene['scl'].values.mask
         if scene['scl'].is_masked_array:
             cloud_mask = np.logical_and(cloud_mask, ~scene['scl'].values.mask)
-    elif scene.scene_properties.platform.startswith('L'):
+    elif isinstance(scene, Landsat):
         # TODO: implement cloud masking for Landsat
         pass
 
@@ -189,11 +190,11 @@ def write_cloudy_pixel_percentage(
         should be written to
     """
     # calculate the percentage of cloudy pixels
-    if scene.scene_properties.platform.startswith('S2'):
+    if isinstance(scene, Sentinel2):
         cloudy_pixel_percentage = scene.get_cloudy_pixel_percentage(
                 cloud_classes=[3, 8, 9]
             )
-    elif scene.scene_properties.platform.startswith('L'):
+    elif isinstance(scene, Landsat):
         cloudy_pixel_percentage = -9999
         # TODO: implement cloud masking for Landsat
 

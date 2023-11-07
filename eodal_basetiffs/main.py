@@ -114,13 +114,15 @@ def fetch_data(
             logger.error(f'Error while post-processing scene: {e}')
             continue
 
-        # save the RGB bands as GeoTIFF
-        fpath_rgb = output_dir_scene.joinpath(f'{timestamp.date()}_rgb.tif')
-        scene.to_rasterio(
-            band_selection=['red', 'green', 'blue'],
-            fpath_raster=fpath_rgb,
-            as_cog=True
-        )
+        # save the RGB bands as GeoTIFF. This is not possible
+        # for Landsat 1-4 as they do not have a blue band.
+        if 'blue' in scene.band_names or 'blue' in scene.band_aliases:
+            fpath_rgb = output_dir_scene.joinpath(f'{timestamp.date()}_rgb.tif')
+            scene.to_rasterio(
+                band_selection=['red', 'green', 'blue'],
+                fpath_raster=fpath_rgb,
+                as_cog=True
+            )
 
         # save the cloud mask as GeoTIFF
         fpath_cloud_mask = output_dir_scene.joinpath(
@@ -136,8 +138,14 @@ def fetch_data(
         fpath_fcir = output_dir_scene.joinpath(
             f'{timestamp.date()}_fcir.tif'
         )
+        # the naming of the nir band is different for Landsat
+        # and Sentinel-2
+        if isinstance(scene, Sentinel2):
+            band_selection = ['nir_1', 'red', 'green']
+        elif isinstance(scene, Landsat):
+            band_selection = ['nir08', 'red', 'green']
         scene.to_rasterio(
-            band_selection=['nir_1', 'red', 'green'],
+            band_selection=band_selection,
             fpath_raster=fpath_fcir,
             as_cog=True
         )
