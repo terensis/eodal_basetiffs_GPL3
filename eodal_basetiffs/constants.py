@@ -1,3 +1,22 @@
+"""
+Constants for the eodal_viewer package defining how to handle
+Sentinel-2 and Landsat scenes.
+
+Copyright (C) 2023 Terensis
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>.
+"""
 
 
 from datetime import datetime
@@ -11,11 +30,6 @@ def prepocess_landsat_scene(
     """
     Mask clouds and cloud shadows in a Landsat scene based
     on the 'qa_pixel' band.
-
-    NOTE:
-        Depending on your needs, the pre-processing function can be
-        fully customized using the full power of EOdal and its
-        interfacing libraries!
 
     :param ds:
         Landsat scene before cloud mask applied.
@@ -33,11 +47,6 @@ def preprocess_sentinel2_scenes(
     """
     Resample Sentinel-2 scenes and mask clouds, shadows, and snow
     based on the Scene Classification Layer (SCL).
-
-    NOTE:
-        Depending on your needs, the pre-processing function can be
-        fully customized using the full power of EOdal and its
-        interfacing libraries!
 
     :param target_resolution:
         spatial target resolution to resample all bands to.
@@ -59,6 +68,7 @@ class Constants:
 
 
 class LandsatC2L1Constants(Constants):
+    """Constants for Landsat Collection 2 Level 1 scenes."""
     # name of the collection to query (Sentinel-2)
     COLLECTION: str = 'landsat-c2-l1'
 
@@ -88,6 +98,7 @@ class LandsatC2L1Constants(Constants):
 
 
 class LandsatC2L2Constants(Constants):
+    """Constants for Landsat Collection 2 Level 2 scenes."""
     # name of the collection to query (Sentinel-2)
     COLLECTION: str = 'landsat-c2-l2'
 
@@ -117,6 +128,7 @@ class LandsatC2L2Constants(Constants):
 
 
 class Sentinel2Constants(Constants):
+    """Constants for Sentinel-2 scenes."""
     # name of the collection to query (Sentinel-2)
     COLLECTION: str = 'sentinel2-msi'
 
