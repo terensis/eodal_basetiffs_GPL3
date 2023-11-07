@@ -16,12 +16,17 @@ from eodal.mapper.feature import Feature
 from eodal.mapper.mapper import Mapper, MapperConfigs
 from eodal.config import get_settings
 from pathlib import Path
-    
-from eodal_viewer.utils import (
+
+from eodal_basetiffs.constants import (
+    Constants,
+    Sentinel2Constants,
+    LandsatC2L1Constants,
+    LandsatC2L2Constants
+)
+from eodal_basetiffs.utils import (
     get_latest_scene,
     indicate_complete,
     make_output_dir_scene,
-    preprocess_sentinel2_scenes,
     post_process_scene,
     scale_ndvi,
     set_latest_scene,
@@ -42,7 +47,9 @@ warnings.filterwarnings('ignore')
 
 def fetch_data(
     output_dir: Path,
-    mapper_configs: MapperConfigs
+    mapper_configs: MapperConfigs,
+    constants: Constants,
+    target_crs: int
 ) -> None:
     """
     Fetch satellite data for a given time period and geographic extent
@@ -50,12 +57,11 @@ def fetch_data(
     as well as a cloud mask. The data is stored as GeoTIFFs organized
     in sub-directories named by the time stamp of the scene.
 
-    :param time_start: start of the time period
-    :param time_end: end of the time period
-    :param output_dir: output directory
+    :param output_dir: output directory where to store the data
     :param mapper_configs: MapperConfigs object
+    :param constants: Constants object containing the scene kwargs
+    :param target_crs: target CRS for reprojection as EPSG code
     """
-
     # create the Mapper object
     mapper = Mapper(mapper_configs)
     # query metadata to identify available scenes
@@ -73,13 +79,13 @@ def fetch_data(
         return
 
     # load the data. This is the actual download step
-    mapper.load_scenes(scene_kwargs=Constants.SCENE_KWARGS)
+    mapper.load_scenes(scene_kwargs=constants.SCENE_KWARGS)
 
     # Loop over the scenes in the collection.
     # Each scene is stored in a separate sub-directory named by
     # the time stamp of the scene. For each scene, four files
     # are created and stored as GeoTIFFs:
-    # - RGB image (red, green, blue)
+    # - RGB image (red, green, blue; not for Landsat 1-4)
     # - cloud mask (binary)
     # - FCIR image (false color infrared, i.e., nir, red, green)
     # - NDVI image (normalized difference vegetation index)
@@ -99,11 +105,11 @@ def fetch_data(
 
         # post-process the scene
         # This means:
-        # - reprojection to EPSG:2056 (LV95)
+        # - reprojection to target CRS
         # - calculation of the NDVI
         # - generation of a binary cloud mask from the Scene
         try:
-            scene = post_process_scene(scene)
+            scene = post_process_scene(scene, target_crs=target_crs)
         except Exception as e:
             logger.error(f'Error while post-processing scene: {e}')
             continue
@@ -175,7 +181,9 @@ def fetch_data(
 def monitor_folder(
     folder_to_monitor: Path,
     feature: Feature,
-    temporal_increment_days: int = 7
+    constants: Constants = Sentinel2Constants,
+    temporal_increment_days: int = 7,
+    target_crs: int = 2056
 ) -> None:
     """
     Monitor a folder with satellite scenes and fetch new data
@@ -185,9 +193,14 @@ def monitor_folder(
     are newer than the last processed scene with a given temporal
     increment.
 
+    The function also takes care of reprojection and post-processing
+    of the satellite scenes. It can handle Sentinel-2 and Landsat.
+
     :param folder_to_monitor: folder to monitor with satellite scenes
     :param feature: Feature object of the area of interest
+    :param constants: Constants object define how to fetch the data
     :param temporal_increment_days: temporal increment in days
+    :param target_crs: target CRS for reprojection as EPSG code
     """
     # get the latest scene to determine the start date
     last_processed_scene = get_latest_scene(folder_to_monitor)
@@ -198,10 +211,10 @@ def monitor_folder(
 
     # setup the Mapper
     mapper_configs = MapperConfigs(
-        collection=Constants.COLLECTION,
+        collection=constants.COLLECTION,
         time_start=time_start,
         time_end=time_end,
-        metadata_filters=Constants.METADATA_FILTERS,
+        metadata_filters=constants.METADATA_FILTERS,
         feature=feature
     )
 
@@ -209,34 +222,90 @@ def monitor_folder(
     try:
         fetch_data(
             folder_to_monitor,
-            mapper_configs
+            mapper_configs,
+            target_crs=target_crs,
+            constants=constants
         )
     except Exception as e:
         logger.error(f'Error while fetching data: {e}')
         return
 
 
-if __name__ == '__main__':
-
-    # ---------- test setup ----------
-    import os
-    cwd = Path(__file__).parents[1].absolute()
-    os.chdir(cwd)
-
-    # define directory to monitor
-    directory_to_monitor = Path('data')
-    directory_to_monitor.mkdir(parents=True, exist_ok=True)
-
-    # define area of interest
-    # test region: canton of Schaffhausen
-    fpath_aoi = cwd.joinpath('data/canton_sh.gpkg')
-
-    # read the data and buffer it by 10km in LV95 (EPSG:2056)
-    # projection
-    aoi = gpd.read_file(fpath_aoi).dissolve().to_crs(epsg=2056).buffer(10000)
-    feature = Feature.from_geoseries(aoi)
-
-    monitor_folder(
-        folder_to_monitor=directory_to_monitor,
-        feature=feature
+def cli() -> None:
+    """
+    Command line interface for the eodal_basetiffs application.
+    """
+    # define the CLI arguments
+    import argparse
+    parser = argparse.ArgumentParser(
+        description='Fetch satellite data and post-process it. Requires ' +
+                    'a GeoPackage or Shapefile with the area of interest ' +
+                    'as input. It fetches data from Sentinel-2 or Landsat ' +
+                    'and stores the outputs (true-color RGB, false-color ' +
+                    'FCIR, NDVI, and a cloud mask) as cloud optimized GeoTiffs.'
     )
+    parser.add_argument(
+        '-a', '--area-of-interest',
+        type=str,
+        help='path to the GeoPackage or Shapefile with the area of interest'
+    )
+    parser.add_argument(
+        '-o', '--output-dir',
+        type=str,
+        help='path to the output directory where to store the data'
+    )
+    parser.add_argument(
+        '-t', '--temporal-increment-days',
+        type=int,
+        default=7,
+        help='temporal increment in days'
+    )
+    parser.add_argument(
+        '-c', '--target-crs',
+        type=int,
+        default=2056,
+        help='target CRS for reprojection as EPSG code'
+    )
+    parser.add_argument(
+        '-p', '--platform',
+        type=str,
+        default='sentinel-2',
+        choices=['sentinel-2', 'landsat-c2-l1', 'landsat-c2-l2'],
+        help='platform to use for data acquisition'
+    )
+
+    # parse the CLI arguments
+    args = parser.parse_args()
+
+    # unpack the arguments and call the monitor_folder function
+    # with the appropriate constants
+    folder_to_monitor = Path(args.output_dir)
+    folder_to_monitor.mkdir(exist_ok=True, parents=True)
+
+    if args.platform == 'sentinel-2':
+        constants = Sentinel2Constants
+    elif args.platform == 'landsat-c2-l1':
+        constants = LandsatC2L1Constants
+    elif args.platform == 'landsat-c2-l2':
+        constants = LandsatC2L2Constants
+    else:
+        raise ValueError(f'Platform {args.platform} not supported')
+
+    # load the area of interest
+    fpath_feature = Path(args.area_of_interest)
+    if not fpath_feature.exists():
+        raise FileNotFoundError(f'{fpath_feature} does not exist')
+    feature = Feature.from_geoseries(gpd.read_file(fpath_feature).geometry.disolve())
+
+    # call the monitor_folder function
+    monitor_folder(
+        folder_to_monitor=folder_to_monitor,
+        feature=feature,
+        constants=constants,
+        temporal_increment_days=args.temporal_increment_days,
+        target_crs=args.target_crs
+    )
+
+
+if __name__ == '__main__':
+    cli()

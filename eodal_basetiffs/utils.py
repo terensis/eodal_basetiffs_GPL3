@@ -12,7 +12,7 @@ import yaml
 
 from datetime import datetime
 from eodal.core.band import Band
-from eodal.core.sensors import Sentinel2
+from eodal.core.raster import RasterCollection
 from pathlib import Path
 
 
@@ -79,63 +79,49 @@ def make_output_dir_scene(
     return output_dir_scene
 
 
-def preprocess_sentinel2_scenes(
-    ds: Sentinel2,
-    target_resolution: int = 10,
-) -> Sentinel2:
-    """
-    Resample satellite scenes and mask clouds, shadows, and snow
-    based on the Scene Classification Layer (SCL).
-
-    :param ds:
-        satellite scene.
-    :param target_resolution:
-        spatial target resolution to resample all bands to.
-        Default: 10 m.
-    :returns:
-        resampled, cloud-masked satellite scene.
-    """
-    # resample scene
-    ds.resample(inplace=True, target_resolution=target_resolution)
-    return ds
-
-
 def post_process_scene(
-    scene: Sentinel2
-) -> Sentinel2:
+    scene: RasterCollection,
+    target_crs: int
+) -> RasterCollection:
     """
     Post-process a satellite scene.
 
     This means:
-    - reprojection to EPSG:2056 (LV95)
+    - reprojection to a target CRS
     - calculation of the NDVI
-    - generation of a binary cloud mask from the Scene
-      Classification Layer (SCL)
+    - generation of a binary cloud mask
 
     :param scene:
         satellite scene
+    :param target_crs:
+        target CRS for reprojection
     :returns:
         post-processed satellite scene
     """
-    # reprojection to EPSG:2056 (LV95)
-    scene.reproject(target_crs=2056, inplace=True)
+    # reprojection to a target CRS
+    scene.reproject(target_crs=target_crs, inplace=True)
 
     # calculate the NDVI
     scene.calc_si('ndvi', inplace=True)
 
-    # generate a binary cloud mask from the Scene Classification
-    # Layer (SCL) that is part of the standard ESA product.
-    # SCL classes that will be treated as clouds are:
-    # - 3: cloud shadows
-    # - 8: cloud medium probability
-    # - 9: cloud high probability
-    # Cirrus clouds (SCL class 10) are not treated as clouds
-    # as cirrus clouds can be corrected by the Sen2Cor processor
-    cloud_mask = np.isin(scene['scl'].values, [3, 8, 9])
-    # update cloud mask with the mask of the area of interest,
-    # i.e., scene['scl'].values.mask
-    if scene['scl'].is_masked_array:
-        cloud_mask = np.logical_and(cloud_mask, ~scene['scl'].values.mask)
+    # Sentinel-2
+    if scene.scene_properties.platform.startswith('S2'):
+        # generate a binary cloud mask from the Scene Classification
+        # Layer (SCL) that is part of the standard ESA product.
+        # SCL classes that will be treated as clouds are:
+        # - 3: cloud shadows
+        # - 8: cloud medium probability
+        # - 9: cloud high probability
+        # Cirrus clouds (SCL class 10) are not treated as clouds
+        # as cirrus clouds can be corrected by the Sen2Cor processor
+        cloud_mask = np.isin(scene['scl'].values, [3, 8, 9])
+        # update cloud mask with the mask of the area of interest,
+        # i.e., scene['scl'].values.mask
+        if scene['scl'].is_masked_array:
+            cloud_mask = np.logical_and(cloud_mask, ~scene['scl'].values.mask)
+    elif scene.scene_properties.platform.startswith('L'):
+        # TODO: implement cloud masking for Landsat
+        pass
 
     # cast to uint8.
     # 0 = no cloud or outside of the area of interest
@@ -147,7 +133,7 @@ def post_process_scene(
         band_name='cloud_mask',
         band_alias='cloud_mask',
         values=cloud_mask,
-        geo_info=scene['B02'].geo_info
+        geo_info=scene[scene.band_names[0]].geo_info
     )
     return scene
 
@@ -169,7 +155,7 @@ def set_latest_scene(
         f.write(f'{timestamp.date()}')
 
 
-def scale_ndvi(scene: Sentinel2) -> None:
+def scale_ndvi(scene: RasterCollection) -> None:
     """
     Scale the NDVI to UINT16 and add it to the scene.
 
@@ -189,7 +175,7 @@ def scale_ndvi(scene: Sentinel2) -> None:
 
 
 def write_cloudy_pixel_percentage(
-    scene: Sentinel2,
+    scene: RasterCollection,
     fpath_cloudy_pixel_percentage: Path
 ) -> None:
     """
@@ -203,9 +189,13 @@ def write_cloudy_pixel_percentage(
         should be written to
     """
     # calculate the percentage of cloudy pixels
-    cloudy_pixel_percentage = scene.get_cloudy_pixel_percentage(
-            cloud_classes=[3, 8, 9]
-        )
+    if scene.scene_properties.platform.startswith('S2'):
+        cloudy_pixel_percentage = scene.get_cloudy_pixel_percentage(
+                cloud_classes=[3, 8, 9]
+            )
+    elif scene.scene_properties.platform.startswith('L'):
+        cloudy_pixel_percentage = -9999
+        # TODO: implement cloud masking for Landsat
 
     # write the percentage of cloudy pixels to disk
     with open(fpath_cloudy_pixel_percentage, 'w') as f:
@@ -213,7 +203,7 @@ def write_cloudy_pixel_percentage(
 
 
 def write_scene_metadata(
-    scene: Sentinel2,
+    scene: RasterCollection,
     fpath_metadata: Path
 ) -> None:
     """
