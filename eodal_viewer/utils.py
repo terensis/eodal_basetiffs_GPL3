@@ -84,16 +84,16 @@ def preprocess_sentinel2_scenes(
     target_resolution: int = 10,
 ) -> Sentinel2:
     """
-    Resample Sentinel-2 scenes and mask clouds, shadows, and snow
+    Resample satellite scenes and mask clouds, shadows, and snow
     based on the Scene Classification Layer (SCL).
 
     :param ds:
-        Sentinel-2 scene.
+        satellite scene.
     :param target_resolution:
         spatial target resolution to resample all bands to.
         Default: 10 m.
     :returns:
-        resampled, cloud-masked Sentinel-2 scene.
+        resampled, cloud-masked satellite scene.
     """
     # resample scene
     ds.resample(inplace=True, target_resolution=target_resolution)
@@ -101,10 +101,10 @@ def preprocess_sentinel2_scenes(
 
 
 def post_process_scene(
-    s2_scene: Sentinel2
+    scene: Sentinel2
 ) -> Sentinel2:
     """
-    Post-process a Sentinel-2 scene.
+    Post-process a satellite scene.
 
     This means:
     - reprojection to EPSG:2056 (LV95)
@@ -112,16 +112,16 @@ def post_process_scene(
     - generation of a binary cloud mask from the Scene
       Classification Layer (SCL)
 
-    :param s2_scene:
-        Sentinel-2 scene
+    :param scene:
+        satellite scene
     :returns:
-        post-processed Sentinel-2 scene
+        post-processed satellite scene
     """
     # reprojection to EPSG:2056 (LV95)
-    s2_scene.reproject(target_crs=2056, inplace=True)
+    scene.reproject(target_crs=2056, inplace=True)
 
     # calculate the NDVI
-    s2_scene.calc_si('ndvi', inplace=True)
+    scene.calc_si('ndvi', inplace=True)
 
     # generate a binary cloud mask from the Scene Classification
     # Layer (SCL) that is part of the standard ESA product.
@@ -131,25 +131,25 @@ def post_process_scene(
     # - 9: cloud high probability
     # Cirrus clouds (SCL class 10) are not treated as clouds
     # as cirrus clouds can be corrected by the Sen2Cor processor
-    cloud_mask = np.isin(s2_scene['scl'].values, [3, 8, 9])
+    cloud_mask = np.isin(scene['scl'].values, [3, 8, 9])
     # update cloud mask with the mask of the area of interest,
-    # i.e., s2_scene['scl'].values.mask
-    if s2_scene['scl'].is_masked_array:
-        cloud_mask = np.logical_and(cloud_mask, ~s2_scene['scl'].values.mask)
+    # i.e., scene['scl'].values.mask
+    if scene['scl'].is_masked_array:
+        cloud_mask = np.logical_and(cloud_mask, ~scene['scl'].values.mask)
 
     # cast to uint8.
     # 0 = no cloud or outside of the area of interest
     # 1 = cloud or cloud shadow
     cloud_mask = cloud_mask.astype(np.uint8)
     # add cloud mask to the scene
-    s2_scene.add_band(
+    scene.add_band(
         band_constructor=Band,
         band_name='cloud_mask',
         band_alias='cloud_mask',
         values=cloud_mask,
-        geo_info=s2_scene['B02'].geo_info
+        geo_info=scene['B02'].geo_info
     )
-    return s2_scene
+    return scene
 
 
 def set_latest_scene(
@@ -169,41 +169,41 @@ def set_latest_scene(
         f.write(f'{timestamp.date()}')
 
 
-def scale_ndvi(s2_scene: Sentinel2) -> None:
+def scale_ndvi(scene: Sentinel2) -> None:
     """
     Scale the NDVI to UINT16 and add it to the scene.
 
-    :param s2_scene:
-        Sentinel-2 scene
+    :param scene:
+        satellite scene
     """
-    ndvi_scaled = s2_scene['ndvi'].values * 10000 + 10000  # scale to uint16
-    s2_scene.add_band(
+    ndvi_scaled = scene['ndvi'].values * 10000 + 10000  # scale to uint16
+    scene.add_band(
         Band,
         'ndvi_scaled',
         ndvi_scaled.astype(np.uint16),
         nodata=0,
         scale=0.0001,
         offset=-1,
-        geo_info=s2_scene['ndvi'].geo_info
+        geo_info=scene['ndvi'].geo_info
     )
 
 
 def write_cloudy_pixel_percentage(
-    s2_scene: Sentinel2,
+    scene: Sentinel2,
     fpath_cloudy_pixel_percentage: Path
 ) -> None:
     """
-    Write the percentage of cloudy pixels in a Sentinel-2 scene
+    Write the percentage of cloudy pixels in a satellite scene
     to disk.
 
-    :param s2_scene:
-        Sentinel-2 scene
+    :param scene:
+        satellite scene
     :param fpath_cloudy_pixel_percentage:
         path to the file where the cloudy pixel percentage
         should be written to
     """
     # calculate the percentage of cloudy pixels
-    cloudy_pixel_percentage = s2_scene.get_cloudy_pixel_percentage(
+    cloudy_pixel_percentage = scene.get_cloudy_pixel_percentage(
             cloud_classes=[3, 8, 9]
         )
 
@@ -213,21 +213,21 @@ def write_cloudy_pixel_percentage(
 
 
 def write_scene_metadata(
-    s2_scene: Sentinel2,
+    scene: Sentinel2,
     fpath_metadata: Path
 ) -> None:
     """
     Write scene metadata to disk in YAML format.
 
-    :param s2_scene:
-        Sentinel-2 scene
+    :param scene:
+        satellite scene
     :param fpath_metadata:
         path to the metadata file
     """
     metadata = {
-        'product_uri': s2_scene.scene_properties.product_uri,
-        'sensing_time': str(s2_scene.scene_properties.sensing_time),
-        'processing_level': s2_scene.scene_properties.processing_level.value,
+        'product_uri': scene.scene_properties.product_uri,
+        'sensing_time': str(scene.scene_properties.sensing_time),
+        'processing_level': scene.scene_properties.processing_level.value,
         'eodal_version': eodal.__version__
     }
 

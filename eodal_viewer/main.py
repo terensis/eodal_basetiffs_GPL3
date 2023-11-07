@@ -1,5 +1,5 @@
 """
-Main script of the EODAL Viewer application.
+Main module of the eodal_basetiffs application.
 
 Author: Lukas Valentin Graf (lukas.graf@terensis.io)
 Date: 2023-10-06
@@ -31,37 +31,6 @@ from eodal_viewer.utils import (
 )
 
 
-# define constants
-class Constants:
-    # name of the collection to query (Sentinel-2)
-    COLLECTION: str = 'sentinel2-msi'
-
-    # filters to apply to the metadata
-    # - only scenes with less than 80% cloudy pixels
-    # - only scenes with processing level 'Level-2A'
-    METADATA_FILTERS: list[Filter] = [
-        Filter('cloudy_pixel_percentage', '<', 80),
-        Filter('processing_level', '==', 'Level-2A')
-    ]
-
-    # kwargs for the scene constructor
-    # - scene_constructor: constructor of the scene class
-    # - scene_constructor_kwargs: kwargs for the scene constructor
-    # - scene_modifier: function to modify the scene after loading
-    SCENE_KWARGS: dict = {
-        'scene_constructor': Sentinel2.from_safe,
-        'scene_constructor_kwargs': {
-            'band_selection': ['B02', 'B03', 'B04', 'B08'],
-            'read_scl': True,
-            'apply_scaling': False},
-        'scene_modifier': preprocess_sentinel2_scenes
-    }
-
-    # start date of the time period to query if no time period
-    # is specified
-    START_DATE: datetime = datetime(2017, 1, 1)
-
-
 # setup logging and usage of STAC API for data access
 settings = get_settings()
 settings.USE_STAC = True
@@ -76,7 +45,7 @@ def fetch_data(
     mapper_configs: MapperConfigs
 ) -> None:
     """
-    Fetch Sentinel-2 data for a given time period and geographic extent
+    Fetch satellite data for a given time period and geographic extent
     and apply post-processing steps to obtain RGB, FCIR, and NDVI images
     as well as a cloud mask. The data is stored as GeoTIFFs organized
     in sub-directories named by the time stamp of the scene.
@@ -114,7 +83,7 @@ def fetch_data(
     # - cloud mask (binary)
     # - FCIR image (false color infrared, i.e., nir, red, green)
     # - NDVI image (normalized difference vegetation index)
-    for timestamp, s2_scene in mapper.data:
+    for timestamp, scene in mapper.data:
         # create the output directory
         try:
             output_dir_scene = make_output_dir_scene(
@@ -134,14 +103,14 @@ def fetch_data(
         # - calculation of the NDVI
         # - generation of a binary cloud mask from the Scene
         try:
-            s2_scene = post_process_scene(s2_scene)
+            scene = post_process_scene(scene)
         except Exception as e:
             logger.error(f'Error while post-processing scene: {e}')
             continue
 
         # save the RGB bands as GeoTIFF
         fpath_rgb = output_dir_scene.joinpath(f'{timestamp.date()}_rgb.tif')
-        s2_scene.to_rasterio(
+        scene.to_rasterio(
             band_selection=['red', 'green', 'blue'],
             fpath_raster=fpath_rgb,
             as_cog=True
@@ -151,7 +120,7 @@ def fetch_data(
         fpath_cloud_mask = output_dir_scene.joinpath(
             f'{timestamp.date()}_cloud_mask.tif'
         )
-        s2_scene.to_rasterio(
+        scene.to_rasterio(
             band_selection=['cloud_mask'],
             fpath_raster=fpath_cloud_mask,
             as_cog=True
@@ -161,7 +130,7 @@ def fetch_data(
         fpath_fcir = output_dir_scene.joinpath(
             f'{timestamp.date()}_fcir.tif'
         )
-        s2_scene.to_rasterio(
+        scene.to_rasterio(
             band_selection=['nir_1', 'red', 'green'],
             fpath_raster=fpath_fcir,
             as_cog=True
@@ -172,9 +141,9 @@ def fetch_data(
             f'{timestamp.date()}_ndvi.tif'
         )
         # calculate the scaled NDVI
-        scale_ndvi(s2_scene)
+        scale_ndvi(scene)
 
-        s2_scene.to_rasterio(
+        scene.to_rasterio(
             band_selection=['ndvi_scaled'],
             fpath_raster=fpath_ndvi,
             as_cog=True
@@ -185,7 +154,7 @@ def fetch_data(
             f'{timestamp.date()}_cloudy_pixel_percentage.txt'
         )
         write_cloudy_pixel_percentage(
-            s2_scene,
+            scene,
             fpath_cloudy_pixel_percentage
         )
 
@@ -193,7 +162,7 @@ def fetch_data(
         fpath_metadata = output_dir_scene.joinpath(
             f'{timestamp.date()}_metadata.yaml'
         )
-        write_scene_metadata(s2_scene, fpath_metadata)
+        write_scene_metadata(scene, fpath_metadata)
 
         # write a file termed "complete" to disk to indicate
         # that the scene has been processed successfully
@@ -209,14 +178,14 @@ def monitor_folder(
     temporal_increment_days: int = 7
 ) -> None:
     """
-    Monitor a folder with Sentinel-2 scenes and fetch new data
+    Monitor a folder with satellite scenes and fetch new data
     automatically. This function is intended to be run as a
     cron job or similar on a regular basis. The function looks
     for the last processed scene and fetches all scenes that
     are newer than the last processed scene with a given temporal
     increment.
 
-    :param folder_to_monitor: folder to monitor with Sentinel-2 scenes
+    :param folder_to_monitor: folder to monitor with satellite scenes
     :param feature: Feature object of the area of interest
     :param temporal_increment_days: temporal increment in days
     """
