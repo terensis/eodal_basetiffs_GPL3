@@ -294,11 +294,8 @@ def cli() -> None:
     """
     # define the CLI arguments
     parser = argparse.ArgumentParser(
-        description='A tool to fetch optical satellite data from different platforms. ' +
-                    'Requires a GeoPackage or Shapefile with the area of interest ' +
-                    'as input. The tool fetches data from Sentinel-2 or Landsat ' +
-                    'and stores the outputs (true-color RGB, false-color ' +
-                    'FCIR, NDVI, and a cloud mask) as cloud optimized GeoTiffs.'
+        description='A tool to download satellite data, pre-process it ' +
+                    'and store it as cloud-optimized GeoTIFFs based on EOdal.'
     )
     parser.add_argument(
         '-a', '--area-of-interest',
@@ -342,7 +339,12 @@ def cli() -> None:
 
     # unpack the arguments and call the monitor_folder function
     # with the appropriate constants
-    folder_to_monitor = Path(args.output_dir)
+    try:
+        folder_to_monitor = Path(args.output_dir)
+    except TypeError:
+        # print help if no arguments are given
+        parser.print_help()
+        return
     folder_to_monitor.mkdir(exist_ok=True, parents=True)
 
     if args.platform == 'sentinel-2':
