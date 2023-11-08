@@ -4,6 +4,21 @@ Utility functions called in the eodal_viewer.main module.
 Author: Lukas Valentin Graf (lukas.graf@terensis.io)
 Date: 2023-10-06
 License: GPLv3
+
+Copyright (C) 2023 Terensis
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>.
 """
 
 import eodal
@@ -12,15 +27,18 @@ import yaml
 
 from datetime import datetime
 from eodal.core.band import Band
-from eodal.core.sensors import Sentinel2
+from eodal.core.raster import RasterCollection
+from eodal.core.sensors import Landsat, Sentinel2
 from pathlib import Path
+
+from eodal_basetiffs.constants import Constants
 
 
 class SceneProcessedException(Exception):
     pass
 
 
-def get_latest_scene(output_dir) -> datetime:
+def get_latest_scene(output_dir: Path, constants: Constants) -> datetime:
     """
     Get the timestamp of the latest scene from a
     file called `latest_scene`. If this file does
@@ -28,6 +46,8 @@ def get_latest_scene(output_dir) -> datetime:
 
     :param output_dir:
         directory where scenes are stored (in sub-directories)
+    :param constants:
+        constants object
     """
     fpath_latest_scene = output_dir.joinpath('latest_scene')
     if fpath_latest_scene.exists():
@@ -36,7 +56,7 @@ def get_latest_scene(output_dir) -> datetime:
         timestamp_raw = timestamp_raw.replace('\n', '')
         timestamp = datetime.strptime(timestamp_raw, '%Y-%m-%d')
     else:
-        timestamp = datetime(2016, 12, 31)
+        timestamp = constants.START_DATE
     return timestamp
 
 
@@ -79,77 +99,63 @@ def make_output_dir_scene(
     return output_dir_scene
 
 
-def preprocess_sentinel2_scenes(
-    ds: Sentinel2,
-    target_resolution: int = 10,
-) -> Sentinel2:
-    """
-    Resample Sentinel-2 scenes and mask clouds, shadows, and snow
-    based on the Scene Classification Layer (SCL).
-
-    :param ds:
-        Sentinel-2 scene.
-    :param target_resolution:
-        spatial target resolution to resample all bands to.
-        Default: 10 m.
-    :returns:
-        resampled, cloud-masked Sentinel-2 scene.
-    """
-    # resample scene
-    ds.resample(inplace=True, target_resolution=target_resolution)
-    return ds
-
-
 def post_process_scene(
-    s2_scene: Sentinel2
-) -> Sentinel2:
+    scene: RasterCollection,
+    target_crs: int
+) -> RasterCollection:
     """
-    Post-process a Sentinel-2 scene.
+    Post-process a satellite scene.
 
     This means:
-    - reprojection to EPSG:2056 (LV95)
+    - reprojection to a target CRS
     - calculation of the NDVI
-    - generation of a binary cloud mask from the Scene
-      Classification Layer (SCL)
+    - generation of a binary cloud mask
 
-    :param s2_scene:
-        Sentinel-2 scene
+    :param scene:
+        satellite scene
+    :param target_crs:
+        target CRS for reprojection
     :returns:
-        post-processed Sentinel-2 scene
+        post-processed satellite scene
     """
-    # reprojection to EPSG:2056 (LV95)
-    s2_scene.reproject(target_crs=2056, inplace=True)
+    # reprojection to a target CRS
+    scene.reproject(target_crs=target_crs, inplace=True)
 
     # calculate the NDVI
-    s2_scene.calc_si('ndvi', inplace=True)
+    scene.calc_si('ndvi', inplace=True)
 
-    # generate a binary cloud mask from the Scene Classification
-    # Layer (SCL) that is part of the standard ESA product.
-    # SCL classes that will be treated as clouds are:
-    # - 3: cloud shadows
-    # - 8: cloud medium probability
-    # - 9: cloud high probability
-    # Cirrus clouds (SCL class 10) are not treated as clouds
-    # as cirrus clouds can be corrected by the Sen2Cor processor
-    cloud_mask = np.isin(s2_scene['scl'].values, [3, 8, 9])
-    # update cloud mask with the mask of the area of interest,
-    # i.e., s2_scene['scl'].values.mask
-    if s2_scene['scl'].is_masked_array:
-        cloud_mask = np.logical_and(cloud_mask, ~s2_scene['scl'].values.mask)
+    # Sentinel-2
+    if isinstance(scene, Sentinel2):
+        # generate a binary cloud mask from the Scene Classification
+        # Layer (SCL) that is part of the standard ESA product.
+        # SCL classes that will be treated as clouds are:
+        # - 3: cloud shadows
+        # - 8: cloud medium probability
+        # - 9: cloud high probability
+        # Cirrus clouds (SCL class 10) are not treated as clouds
+        # as cirrus clouds can be corrected by the Sen2Cor processor
+        cloud_mask = np.isin(scene['scl'].values, [3, 8, 9])
+        # update cloud mask with the mask of the area of interest,
+        # i.e., scene['scl'].values.mask
+        if scene['scl'].is_masked_array:
+            cloud_mask = np.logical_and(cloud_mask, ~scene['scl'].values.mask)
+    elif isinstance(scene, Landsat):
+        # TODO: implement cloud masking for Landsat
+        pass
 
     # cast to uint8.
     # 0 = no cloud or outside of the area of interest
     # 1 = cloud or cloud shadow
     cloud_mask = cloud_mask.astype(np.uint8)
     # add cloud mask to the scene
-    s2_scene.add_band(
+    scene.add_band(
         band_constructor=Band,
         band_name='cloud_mask',
         band_alias='cloud_mask',
         values=cloud_mask,
-        geo_info=s2_scene['B02'].geo_info
+        geo_info=scene[scene.band_names[0]].geo_info
     )
-    return s2_scene
+    return scene
 
 
 def set_latest_scene(
@@ -169,43 +175,50 @@ def set_latest_scene(
         f.write(f'{timestamp.date()}')
 
 
-def scale_ndvi(s2_scene: Sentinel2) -> None:
+def scale_ndvi(scene: RasterCollection) -> None:
     """
     Scale the NDVI to UINT16 and add it to the scene.
 
-    :param s2_scene:
-        Sentinel-2 scene
+    :param scene:
+        satellite scene
     """
-    ndvi_scaled = s2_scene['ndvi'].values * 10000 + 10000  # scale to uint16
-    s2_scene.add_band(
+    ndvi_scaled = scene['ndvi'].values * 10000 + 10000  # scale to uint16
+    # delete the original NDVI
+    del scene['NDVI']
+    # and add the scaled NDVI
+    scene.add_band(
         Band,
-        'ndvi_scaled',
+        'ndvi',
         ndvi_scaled.astype(np.uint16),
-        nodata=0,
+        nodata=11000,
         scale=0.0001,
         offset=-1,
-        geo_info=s2_scene['ndvi'].geo_info
+        geo_info=scene['ndvi'].geo_info
     )
 
 
 def write_cloudy_pixel_percentage(
-    s2_scene: Sentinel2,
+    scene: RasterCollection,
     fpath_cloudy_pixel_percentage: Path
 ) -> None:
     """
-    Write the percentage of cloudy pixels in a Sentinel-2 scene
+    Write the percentage of cloudy pixels in a satellite scene
     to disk.
 
-    :param s2_scene:
-        Sentinel-2 scene
+    :param scene:
+        satellite scene
     :param fpath_cloudy_pixel_percentage:
         path to the file where the cloudy pixel percentage
         should be written to
     """
     # calculate the percentage of cloudy pixels
-    cloudy_pixel_percentage = s2_scene.get_cloudy_pixel_percentage(
-            cloud_classes=[3, 8, 9]
-        )
+    if isinstance(scene, Sentinel2):
+        cloudy_pixel_percentage = scene.get_cloudy_pixel_percentage(
+                cloud_classes=[3, 8, 9]
+            )
+    elif isinstance(scene, Landsat):
+        cloudy_pixel_percentage = -9999
+        # TODO: implement cloud masking for Landsat
 
     # write the percentage of cloudy pixels to disk
     with open(fpath_cloudy_pixel_percentage, 'w') as f:
@@ -213,21 +226,21 @@ def write_cloudy_pixel_percentage(
 
 
 def write_scene_metadata(
-    s2_scene: Sentinel2,
+    scene: RasterCollection,
     fpath_metadata: Path
 ) -> None:
     """
     Write scene metadata to disk in YAML format.
 
-    :param s2_scene:
-        Sentinel-2 scene
+    :param scene:
+        satellite scene
     :param fpath_metadata:
         path to the metadata file
     """
     metadata = {
-        'product_uri': s2_scene.scene_properties.product_uri,
-        'sensing_time': str(s2_scene.scene_properties.sensing_time),
-        'processing_level': s2_scene.scene_properties.processing_level.value,
+        'product_uri': scene.scene_properties.product_uri,
+        'sensing_time': str(scene.scene_properties.sensing_time),
+        'processing_level': scene.scene_properties.processing_level.value,
         'eodal_version': eodal.__version__
     }
 
