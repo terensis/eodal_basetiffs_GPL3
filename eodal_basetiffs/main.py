@@ -21,12 +21,12 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 """
 
+import argparse
 import geopandas as gpd
 import warnings
 
 from datetime import datetime, timedelta
-from eodal.core.sensors import Sentinel2
-from eodal.mapper.filter import Filter
+from eodal.core.sensors import Landsat, Sentinel2
 from eodal.mapper.feature import Feature
 from eodal.mapper.mapper import Mapper, MapperConfigs
 from eodal.config import get_settings
@@ -102,7 +102,7 @@ def fetch_data(
     # are created and stored as GeoTIFFs:
     # - RGB image (red, green, blue; not for Landsat 1-4)
     # - cloud mask (binary)
-    # - FCIR image (false color infrared, i.e., nir, red, green)
+    # - FCIR image (false color infra-red, i.e., nir, red, green)
     # - NDVI image (normalized difference vegetation index)
     for timestamp, scene in mapper.data:
         # create the output directory
@@ -173,7 +173,7 @@ def fetch_data(
         scale_ndvi(scene)
 
         scene.to_rasterio(
-            band_selection=['ndvi_scaled'],
+            band_selection=['ndvi'],
             fpath_raster=fpath_ndvi,
             as_cog=True
         )
@@ -206,7 +206,8 @@ def monitor_folder(
     feature: Feature,
     constants: Constants = Sentinel2Constants,
     temporal_increment_days: int = 7,
-    target_crs: int = 2056
+    target_crs: int = 3857,
+    run_till_complete: bool = False
 ) -> None:
     """
     Monitor a folder with satellite scenes and fetch new data
@@ -219,15 +220,37 @@ def monitor_folder(
     The function also takes care of reprojection and post-processing
     of the satellite scenes. It can handle Sentinel-2 and Landsat.
 
-    :param folder_to_monitor: folder to monitor with satellite scenes
-    :param feature: Feature object of the area of interest
-    :param constants: Constants object define how to fetch the data
-    :param temporal_increment_days: temporal increment in days
-    :param target_crs: target CRS for reprojection as EPSG code
+    :param folder_to_monitor:
+        folder to monitor with satellite scenes.
+    :param feature:
+        Feature object of the area of interest.
+    :param constants:
+        Constants object define how to fetch the data (platform,
+        scene preprocessing, etc.).
+    :param temporal_increment_days:
+        temporal increment in days, i.e., the function will search
+        for scenes that are newer than the last processed scene
+        plus this increment.
+    :param target_crs:
+        target CRS for reprojection as EPSG code. The default
+        is the web mercator projection (EPSG:3857).
+    :param run_till_complete:
+        if True, the function will run until all scenes are processed
+        and no new data is available (i.e., the last processed scene
+        is the last scene available and all other scenes would be in the
+        future).
     """
     # get the latest scene to determine the start date
-    last_processed_scene = get_latest_scene(folder_to_monitor)
+    last_processed_scene = get_latest_scene(
+        folder_to_monitor, constants=constants)
     time_start = last_processed_scene + timedelta(days=1)
+
+    # if time start is in the future, there is nothing to do
+    if time_start > datetime.now():
+        logger.info(
+            f'Start date {time_start.date()} is in the future. Exiting.')
+        return
+
     # the end time for the next query will be the time stamp of the
     # last processed scene plus the temporal increment
     time_end = time_start + timedelta(days=temporal_increment_days)
@@ -251,7 +274,18 @@ def monitor_folder(
         )
     except Exception as e:
         logger.error(f'Error while fetching data: {e}')
-        return
+
+    # if run_till_complete is True, we call the function recursively
+    # until all scenes are processed
+    if run_till_complete:
+        monitor_folder(
+            folder_to_monitor=folder_to_monitor,
+            feature=feature,
+            constants=constants,
+            temporal_increment_days=temporal_increment_days,
+            target_crs=target_crs,
+            run_till_complete=run_till_complete
+        )
 
 
 def cli() -> None:
@@ -259,11 +293,10 @@ def cli() -> None:
     Command line interface for the eodal_basetiffs application.
     """
     # define the CLI arguments
-    import argparse
     parser = argparse.ArgumentParser(
-        description='Fetch satellite data and post-process it. Requires ' +
-                    'a GeoPackage or Shapefile with the area of interest ' +
-                    'as input. It fetches data from Sentinel-2 or Landsat ' +
+        description='A tool to fetch optical satellite data from different platforms. ' +
+                    'Requires a GeoPackage or Shapefile with the area of interest ' +
+                    'as input. The tool fetches data from Sentinel-2 or Landsat ' +
                     'and stores the outputs (true-color RGB, false-color ' +
                     'FCIR, NDVI, and a cloud mask) as cloud optimized GeoTiffs.'
     )
@@ -295,6 +328,13 @@ def cli() -> None:
         default='sentinel-2',
         choices=['sentinel-2', 'landsat-c2-l1', 'landsat-c2-l2'],
         help='platform to use for data acquisition'
+    )
+    parser.add_argument(
+        '-r', '--run-till-complete',
+        type=bool,
+        default=False,
+        choices=[True, False],
+        help='run until all scenes are processed'
     )
 
     # parse the CLI arguments
