@@ -186,11 +186,12 @@ def scale_ndvi(scene: RasterCollection) -> None:
     # delete the original NDVI
     del scene['NDVI']
     # and add the scaled NDVI
+    # TODO: think about the nodata value
     scene.add_band(
         Band,
         'ndvi',
         ndvi_scaled.astype(np.uint16),
-        nodata=11000,
+        nodata=21000,
         scale=0.0001,
         offset=-1,
         geo_info=scene['ndvi'].geo_info

@@ -84,7 +84,7 @@ def validate_ndvi(fpath: Path) -> None:
     assert len(rc) == 1
     assert rc.band_names == ['ndvi']
     assert rc['ndvi'].values.dtype == 'uint16'
-    assert rc['ndvi'].nodata == 11000
+    assert rc['ndvi'].nodata == 21000
     assert rc['ndvi'].scale == 0.0001
     assert rc['ndvi'].offset == -1
 
