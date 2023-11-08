@@ -24,39 +24,17 @@ from eodal.core.sensors import Landsat, Sentinel2
 from eodal.mapper.filter import Filter
 
 
-def prepocess_landsat_scene(
-        ds: Landsat
-) -> Landsat:
-    """
-    Mask clouds and cloud shadows in a Landsat scene based
-    on the 'qa_pixel' band.
-
-    :param ds:
-        Landsat scene before cloud mask applied.
-    :return:
-        Landsat scene with clouds and cloud shadows masked.
-    """
-    ds.mask_clouds_and_shadows(inplace=True)
-    return ds
-
-
 def preprocess_sentinel2_scenes(
     ds: Sentinel2,
-    target_resolution: int,
 ) -> Sentinel2:
     """
-    Resample Sentinel-2 scenes and mask clouds, shadows, and snow
-    based on the Scene Classification Layer (SCL).
+    Resample Sentinel-2 scenes to a spatial resolution of 10 m.
 
-    :param target_resolution:
-        spatial target resolution to resample all bands to.
     :returns:
-        resampled, cloud-masked Sentinel-2 scene.
+        resampled Sentinel-2 scene (10 m spatial resolution).
     """
     # resample scene
-    ds.resample(inplace=True, target_resolution=target_resolution)
-    # mask clouds, shadows, and snow
-    ds.mask_clouds_and_shadows(inplace=True)
+    ds.resample(inplace=True, target_resolution=10)
     return ds
 
 
@@ -89,7 +67,6 @@ class LandsatC2L1Constants(Constants):
             'band_selection': ['green', 'red', 'nir08'],
             'read_qa': True,
             'apply_scaling': False},
-        'scene_modifier': preprocess_landsat_scenes
     }
 
     # start date of the time period to query if no time period
@@ -119,7 +96,6 @@ class LandsatC2L2Constants(Constants):
             'band_selection': ['blue', 'green', 'red', 'nir08'],
             'read_qa': True,
             'apply_scaling': False},
-        'scene_modifier': preprocess_landsat_scenes
     }
 
     # start date of the time period to query if no time period
