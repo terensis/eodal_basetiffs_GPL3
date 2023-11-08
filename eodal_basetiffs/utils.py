@@ -31,12 +31,14 @@ from eodal.core.raster import RasterCollection
 from eodal.core.sensors import Landsat, Sentinel2
 from pathlib import Path
 
+from eodal_basetiffs.constants import Constants
+
 
 class SceneProcessedException(Exception):
     pass
 
 
-def get_latest_scene(output_dir) -> datetime:
+def get_latest_scene(output_dir: Path, constants: Constants) -> datetime:
     """
     Get the timestamp of the latest scene from a
     file called `latest_scene`. If this file does
@@ -44,6 +46,8 @@ def get_latest_scene(output_dir) -> datetime:
 
     :param output_dir:
         directory where scenes are stored (in sub-directories)
+    :param constants:
+        constants object
     """
     fpath_latest_scene = output_dir.joinpath('latest_scene')
     if fpath_latest_scene.exists():
@@ -52,7 +56,7 @@ def get_latest_scene(output_dir) -> datetime:
         timestamp_raw = timestamp_raw.replace('\n', '')
         timestamp = datetime.strptime(timestamp_raw, '%Y-%m-%d')
     else:
-        timestamp = datetime(2016, 12, 31)
+        timestamp = constants.START_DATE
     return timestamp
 
 
@@ -179,11 +183,14 @@ def scale_ndvi(scene: RasterCollection) -> None:
         satellite scene
     """
     ndvi_scaled = scene['ndvi'].values * 10000 + 10000  # scale to uint16
+    # delete the original NDVI
+    del scene['NDVI']
+    # and add the scaled NDVI
     scene.add_band(
         Band,
-        'ndvi_scaled',
+        'ndvi',
         ndvi_scaled.astype(np.uint16),
-        nodata=0,
+        nodata=11000,
         scale=0.0001,
         offset=-1,
         geo_info=scene['ndvi'].geo_info
