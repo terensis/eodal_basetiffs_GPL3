@@ -100,7 +100,7 @@ class LandsatC2L2Constants(Constants):
 
     # start date of the time period to query if no time period
     # is specified
-    START_DATE: datetime = datetime(1972, 9, 1)
+    START_DATE: datetime = datetime(2016, 1, 1)
 
 
 class Sentinel2Constants(Constants):
