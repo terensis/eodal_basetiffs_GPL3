@@ -41,7 +41,7 @@ def get_data_dir() -> Path:
 @pytest.fixture
 def get_feature(get_data_dir) -> Feature:
     data_dir = get_data_dir
-    fpath_feature = data_dir.joinpath('canton_sh.gpkg')
+    fpath_feature = data_dir.joinpath('test_region.gpkg')
     feature = Feature.from_geoseries(
         gpd.read_file(fpath_feature).dissolve().geometry)
     return feature
@@ -62,12 +62,25 @@ def validate_rgb(fpath: Path) -> None:
         assert scaled.values.max() <= 1.6
 
 
+def validate_rgb_landsat(fpath: Path) -> None:
+    rc = RasterCollection.from_multi_band_raster(fpath)
+    assert len(rc) == 3
+    assert rc.band_names == ['red', 'green', 'blue']
+
+    for band_name in rc.band_names:
+        assert rc[band_name].scale == 1e-5
+        assert rc[band_name].values.dtype == 'uint16'
+        assert rc[band_name].nodata == 0
+        assert rc[band_name].geo_info.epsg == 3857
+        scaled = rc[band_name].scale_data()
+        assert scaled.values.min() >= 0
+        assert scaled.values.max() <= 1
+
 
 def validate_fcir(fpath: Path) -> None:
     rc = RasterCollection.from_multi_band_raster(fpath)
     assert len(rc) == 3
-    assert rc.band_names == ['nir_1', 'red', 'green'] or \
-              rc.band_names == ['nir08', 'red', 'blue']
+    assert rc.band_names == ['nir_1', 'red', 'green']
 
     for band_name in rc.band_names:
         assert rc[band_name].scale == 0.0001
@@ -77,6 +90,38 @@ def validate_fcir(fpath: Path) -> None:
         scaled = rc[band_name].scale_data()
         assert scaled.values.min() >= -0.1
         assert scaled.values.max() <= 1.6
+
+
+def validate_fcir_landsat_l2(fpath: Path) -> None:
+    rc = RasterCollection.from_multi_band_raster(fpath)
+    assert len(rc) == 3
+    assert rc.band_names  == ['nir08', 'red', 'green']
+
+    for band_name in rc.band_names:
+        assert rc[band_name].scale == 1e-5
+        assert rc[band_name].offset == 0
+        assert rc[band_name].values.dtype == 'uint16'
+        assert rc[band_name].nodata == 0
+        assert rc[band_name].geo_info.epsg == 3857
+        scaled = rc[band_name].scale_data()
+        assert scaled.values.min() >= 0.
+        assert scaled.values.max() <= 1.
+
+
+def validate_fcir_landsat_l1(fpath: Path) -> None:
+    rc = RasterCollection.from_multi_band_raster(fpath)
+    assert len(rc) == 3
+    assert rc.band_names == rc.band_names == ['nir08', 'red', 'green']
+
+    # the level 1 is in 8bit!
+    for band_name in rc.band_names:
+        assert rc[band_name].scale == 1.0
+        assert rc[band_name].values.dtype == 'uint8'
+        assert rc[band_name].nodata == 0
+        assert rc[band_name].geo_info.epsg == 3857
+        scaled = rc[band_name].scale_data()
+        assert scaled.values.min() >= 0
+        assert scaled.values.max() <= 255
 
 
 def validate_ndvi(fpath: Path) -> None:
@@ -136,13 +181,88 @@ def test_sentinel2(get_data_dir, get_feature):
     # read the cloudy pixel percentage file and assure it is correct
     with open(
         scene_dir.joinpath('2017-01-07_cloudy_pixel_percentage.txt'),'r') as f:
-        assert f.read() == '17.7\n'
+        cloud_cover = float(f.read())
+    assert cloud_cover == 26.5
 
 
-def test_landsat_l1(get_data_dir, get_feature):
-    pass
+def test_landsat_c2l1(get_data_dir, get_feature):
+
+    constants = LandsatC2L1Constants
+    feature = get_feature
+    output_dir = get_data_dir.joinpath('landsat-l1')
+    # ensure a "clean" start
+    if output_dir.exists():
+        shutil.rmtree(output_dir)
+    output_dir.mkdir()
+
+    monitor_folder(
+        constants=constants,
+        feature=feature,
+        folder_to_monitor=output_dir,
+        temporal_increment_days=30
+    )
+
+    scene_dir = output_dir.joinpath('1972-09-20')
+    # ensure all outputs exist
+    assert scene_dir.exists()
+
+    assert scene_dir.joinpath('1972-09-20_cloud_mask.tif').exists()
+    assert scene_dir.joinpath('1972-09-20_ndvi.tif').exists()
+    assert not scene_dir.joinpath('1972-09-20_rgb.tif').exists()
+    assert scene_dir.joinpath('1972-09-20_fcir.tif').exists()
+    assert scene_dir.joinpath('complete.txt').exists()
+    assert scene_dir.joinpath('1972-09-20_cloudy_pixel_percentage.txt').exists()
+    assert scene_dir.joinpath('1972-09-20_metadata.yaml').exists()
+
+    # validate output
+    validate_fcir_landsat_l1(scene_dir.joinpath('1972-09-20_fcir.tif'))
+    validate_ndvi(scene_dir.joinpath('1972-09-20_ndvi.tif'))
+    validate_yaml(scene_dir.joinpath('1972-09-20_metadata.yaml'))
 
 
-def test_landsat_l2(get_data_dir, get_feature):
-    pass
+def test_landsat_c2l2(get_data_dir, get_feature):
 
+    constants = LandsatC2L2Constants
+    feature = get_feature
+    output_dir = get_data_dir.joinpath('landsat-l2')
+    # ensure a "clean" start
+    if output_dir.exists():
+        shutil.rmtree(output_dir)
+    output_dir.mkdir()
+
+    monitor_folder(
+        constants=constants,
+        feature=feature,
+        folder_to_monitor=output_dir,
+        temporal_increment_days=60)
+
+    scenes = [
+        '2016-01-05',
+        '2016-01-06',
+        '2016-01-14',
+        '2016-01-21',
+        '2016-01-22',
+        '2016-01-29',
+        '2016-01-30',
+        '2016-02-06',
+        '2016-02-15',
+        '2016-02-22',
+        '2016-03-01'
+    ]
+    for scene in scenes:
+        scene_dir = output_dir.joinpath(scene)
+        # ensure all outputs exist
+        assert scene_dir.exists()
+        assert scene_dir.joinpath(f'{scene}_cloud_mask.tif').exists()
+        assert scene_dir.joinpath(f'{scene}_ndvi.tif').exists()
+        assert scene_dir.joinpath(f'{scene}_rgb.tif').exists()
+        assert scene_dir.joinpath(f'{scene}_fcir.tif').exists()
+        assert scene_dir.joinpath('complete.txt').exists()
+        assert scene_dir.joinpath(f'{scene}_cloudy_pixel_percentage.txt').exists()
+        assert scene_dir.joinpath(f'{scene}_metadata.yaml').exists()
+    
+        # validate output
+        validate_fcir_landsat_l2(scene_dir.joinpath(f'{scene}_fcir.tif'))
+        validate_rgb_landsat(scene_dir.joinpath(f'{scene}_rgb.tif'))
+        validate_ndvi(scene_dir.joinpath(f'{scene}_ndvi.tif'))
+        validate_yaml(scene_dir.joinpath(f'{scene}_metadata.yaml'))
