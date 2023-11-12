@@ -1,0 +1,2 @@
+rio-cogeo
+git+https://github.com/EOA-team/eodal
