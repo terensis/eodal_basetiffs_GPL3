@@ -160,7 +160,8 @@ cython_debug/
 #.idea/
 
 # ignore data folder
-data/
+data/landsat*
+data/sentinel*
 *.tiff
 
 /.project
