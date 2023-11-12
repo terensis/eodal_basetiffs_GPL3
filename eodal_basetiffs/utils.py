@@ -134,19 +134,17 @@ def post_process_scene(
         # - 9: cloud high probability
         # Cirrus clouds (SCL class 10) are not treated as clouds
         # as cirrus clouds can be corrected by the Sen2Cor processor
-        cloud_mask = np.isin(scene['scl'].values, [3, 8, 9])
-        # update cloud mask with the mask of the area of interest,
-        # i.e., scene['scl'].values.mask
-        if scene['scl'].is_masked_array:
-            cloud_mask = np.logical_and(cloud_mask, ~scene['scl'].values.mask)
+        cloud_mask = scene.get_cloud_and_shadow_mask(cloud_classes=[3, 8, 9])
     elif isinstance(scene, Landsat):
-        # TODO: implement cloud masking for Landsat
-        pass
+        # generate a binary cloud mask from the pixel quality band.
+        # Only bit 3 (cloud) is used here, as it is available for all
+        # Landsat satellites (1 to 9).
+        cloud_mask = scene.get_cloud_and_shadow_mask(cloud_classes=[3])
 
     # cast to uint8.
     # 0 = no cloud or outside of the area of interest
     # 1 = cloud or cloud shadow
-    cloud_mask = cloud_mask.astype(np.uint8)
+    cloud_mask = cloud_mask.values.astype(np.uint8)
     # add cloud mask to the scene
     scene.add_band(
         band_constructor=Band,
