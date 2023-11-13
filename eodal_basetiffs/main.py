@@ -368,7 +368,8 @@ def cli() -> None:
         feature=feature,
         constants=constants,
         temporal_increment_days=args.temporal_increment_days,
-        target_crs=args.target_crs
+        target_crs=args.target_crs,
+        run_till_complete=args.run_till_complete
     )
 
 
