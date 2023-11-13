@@ -360,7 +360,7 @@ def cli() -> None:
     fpath_feature = Path(args.area_of_interest)
     if not fpath_feature.exists():
         raise FileNotFoundError(f'{fpath_feature} does not exist')
-    feature = Feature.from_geoseries(gpd.read_file(fpath_feature).geometry.dissolve())
+    feature = Feature.from_geoseries(gpd.read_file(fpath_feature).dissolve().geometry)
 
     # call the monitor_folder function
     monitor_folder(
