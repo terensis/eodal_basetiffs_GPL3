@@ -9,7 +9,7 @@ setup(
     packages=['eodal_basetiffs'],
     entry_points={
         'console_scripts': [
-            'eodal_basetiffs = eodal_basetiffs.main:cli'
+            'eodal_basetiffs = eodal_basetiffs.main'
         ]
     },
     license='GPLv3',
