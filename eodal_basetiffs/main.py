@@ -331,8 +331,7 @@ def cli() -> None:
     parser.add_argument(
         '-r', '--run-till-complete',
         type=bool,
-        default=False,
-        choices=[True, False],
+        action='store_true',
         help='run until all scenes are processed'
     )
 

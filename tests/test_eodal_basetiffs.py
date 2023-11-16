@@ -268,3 +268,6 @@ def test_landsat_c2l2(get_data_dir, get_feature):
         validate_rgb_landsat(scene_dir.joinpath(f'{scene}_rgb.tif'))
         validate_ndvi(scene_dir.joinpath(f'{scene}_ndvi.tif'))
         validate_yaml(scene_dir.joinpath(f'{scene}_metadata.yaml'))
+
+
+# TODO: Add test for cli function to test the full argparser (especially the store_true option)
