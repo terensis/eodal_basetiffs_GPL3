@@ -38,7 +38,7 @@ from eodal_basetiffs.constants import (
     Constants,
     Sentinel2Constants,
     LandsatC2L1Constants,
-    LandsatC2L2Constants
+    LandsatC2L2Constants,
 )
 from eodal_basetiffs.utils import (
     get_latest_scene,
@@ -49,7 +49,7 @@ from eodal_basetiffs.utils import (
     set_latest_scene,
     SceneProcessedException,
     write_cloudy_pixel_percentage,
-    write_scene_metadata
+    write_scene_metadata,
 )
 
 
@@ -59,14 +59,14 @@ settings.USE_STAC = True
 logger = settings.logger
 
 # ignore warnings
-warnings.filterwarnings('ignore')
+warnings.filterwarnings("ignore")
 
 
 def fetch_data(
     output_dir: Path,
     mapper_configs: MapperConfigs,
     constants: Constants,
-    target_crs: int
+    target_crs: int,
 ) -> None:
     """
     Fetch satellite data for a given time period and geographic extent
@@ -91,8 +91,8 @@ def fetch_data(
         last_timestamp = mapper.mapper_configs.time_end
         set_latest_scene(output_dir, timestamp=last_timestamp)
         logger.info(
-            f'No data found {first_timestamp.date()} ' +
-            f'and {last_timestamp.date()}')
+            f"No data found {first_timestamp.date()} " + f"and {last_timestamp.date()}"
+        )
         return
 
     # load the data. This is the actual download step
@@ -110,8 +110,7 @@ def fetch_data(
         # create the output directory
         try:
             output_dir_scene = make_output_dir_scene(
-                output_dir=output_dir,
-                timestamp=timestamp
+                output_dir=output_dir, timestamp=timestamp
             )
         except SceneProcessedException as e:
             logger.info(e)
@@ -128,71 +127,54 @@ def fetch_data(
         try:
             scene = post_process_scene(scene, target_crs=target_crs)
         except Exception as e:
-            logger.error(f'Error while post-processing scene: {e}')
+            logger.error(f"Error while post-processing scene: {e}")
             continue
 
         # save the RGB bands as GeoTIFF. This is not possible
         # for Landsat 1-4 as they do not have a blue band.
-        if 'blue' in scene.band_names or 'blue' in scene.band_aliases:
-            fpath_rgb = output_dir_scene.joinpath(f'{timestamp.date()}_rgb.tif')
+        if "blue" in scene.band_names or "blue" in scene.band_aliases:
+            fpath_rgb = output_dir_scene.joinpath(f"{timestamp.date()}_rgb.tif")
             scene.to_rasterio(
-                band_selection=['red', 'green', 'blue'],
+                band_selection=["red", "green", "blue"],
                 fpath_raster=fpath_rgb,
-                as_cog=True
+                as_cog=True,
             )
 
         # save the cloud mask as GeoTIFF
         fpath_cloud_mask = output_dir_scene.joinpath(
-            f'{timestamp.date()}_cloud_mask.tif'
+            f"{timestamp.date()}_cloud_mask.tif"
         )
         scene.to_rasterio(
-            band_selection=['cloud_mask'],
-            fpath_raster=fpath_cloud_mask,
-            as_cog=True
+            band_selection=["cloud_mask"], fpath_raster=fpath_cloud_mask, as_cog=True
         )
 
         # save the FCIR bands as GeoTIFF
-        fpath_fcir = output_dir_scene.joinpath(
-            f'{timestamp.date()}_fcir.tif'
-        )
+        fpath_fcir = output_dir_scene.joinpath(f"{timestamp.date()}_fcir.tif")
         # the naming of the nir band is different for Landsat
         # and Sentinel-2
         if isinstance(scene, Sentinel2):
-            band_selection = ['nir_1', 'red', 'green']
+            band_selection = ["nir_1", "red", "green"]
         elif isinstance(scene, Landsat):
-            band_selection = ['nir08', 'red', 'green']
+            band_selection = ["nir08", "red", "green"]
         scene.to_rasterio(
-            band_selection=band_selection,
-            fpath_raster=fpath_fcir,
-            as_cog=True
+            band_selection=band_selection, fpath_raster=fpath_fcir, as_cog=True
         )
 
         # save the NDVI as GeoTIFF
-        fpath_ndvi = output_dir_scene.joinpath(
-            f'{timestamp.date()}_ndvi.tif'
-        )
+        fpath_ndvi = output_dir_scene.joinpath(f"{timestamp.date()}_ndvi.tif")
         # calculate the scaled NDVI
         scale_ndvi(scene)
 
-        scene.to_rasterio(
-            band_selection=['ndvi'],
-            fpath_raster=fpath_ndvi,
-            as_cog=True
-        )
+        scene.to_rasterio(band_selection=["ndvi"], fpath_raster=fpath_ndvi, as_cog=True)
 
         # write the cloudy pixel percentage to disk
         fpath_cloudy_pixel_percentage = output_dir_scene.joinpath(
-            f'{timestamp.date()}_cloudy_pixel_percentage.txt'
+            f"{timestamp.date()}_cloudy_pixel_percentage.txt"
         )
-        write_cloudy_pixel_percentage(
-            scene,
-            fpath_cloudy_pixel_percentage
-        )
+        write_cloudy_pixel_percentage(scene, fpath_cloudy_pixel_percentage)
 
         # write the scene metadata to disk
-        fpath_metadata = output_dir_scene.joinpath(
-            f'{timestamp.date()}_metadata.yaml'
-        )
+        fpath_metadata = output_dir_scene.joinpath(f"{timestamp.date()}_metadata.yaml")
         write_scene_metadata(scene, fpath_metadata)
 
         # write a file termed "complete" to disk to indicate
@@ -200,7 +182,7 @@ def fetch_data(
         set_latest_scene(output_dir, timestamp=timestamp)
         indicate_complete(output_dir_scene)
 
-        logger.info(f'Processed scene {timestamp.date()}')
+        logger.info(f"Processed scene {timestamp.date()}")
 
 
 def monitor_folder(
@@ -209,7 +191,7 @@ def monitor_folder(
     constants: Constants = Sentinel2Constants,
     temporal_increment_days: int = 7,
     target_crs: int = 3857,
-    run_till_complete: bool = False
+    run_till_complete: bool = False,
 ) -> None:
     """
     Monitor a folder with satellite scenes and fetch new data
@@ -243,14 +225,12 @@ def monitor_folder(
         future).
     """
     # get the latest scene to determine the start date
-    last_processed_scene = get_latest_scene(
-        folder_to_monitor, constants=constants)
+    last_processed_scene = get_latest_scene(folder_to_monitor, constants=constants)
     time_start = last_processed_scene + timedelta(days=1)
 
     # if time start is in the future, there is nothing to do
     if time_start > datetime.now():
-        logger.info(
-            f'Start date {time_start.date()} is in the future. Exiting.')
+        logger.info(f"Start date {time_start.date()} is in the future. Exiting.")
         return
 
     # the end time for the next query will be the time stamp of the
@@ -263,7 +243,7 @@ def monitor_folder(
         time_start=time_start,
         time_end=time_end,
         metadata_filters=constants.METADATA_FILTERS,
-        feature=feature
+        feature=feature,
     )
 
     # fetch data
@@ -272,10 +252,10 @@ def monitor_folder(
             folder_to_monitor,
             mapper_configs,
             target_crs=target_crs,
-            constants=constants
+            constants=constants,
         )
     except Exception as e:
-        logger.error(f'Error while fetching data: {e}')
+        logger.error(f"Error while fetching data: {e}")
 
     # if run_till_complete is True, we call the function recursively
     # until all scenes are processed
@@ -286,7 +266,7 @@ def monitor_folder(
             constants=constants,
             temporal_increment_days=temporal_increment_days,
             target_crs=target_crs,
-            run_till_complete=run_till_complete
+            run_till_complete=run_till_complete,
         )
 
 
@@ -296,43 +276,48 @@ def cli() -> None:
     """
     # define the CLI arguments
     parser = argparse.ArgumentParser(
-        description='A tool to download satellite data, pre-process it ' +
-                    'and store it as cloud-optimized GeoTIFFs based on EOdal.'
+        description="A tool to download satellite data, pre-process it "
+        + "and store it as cloud-optimized GeoTIFFs based on EOdal."
     )
     parser.add_argument(
-        '-a', '--area-of-interest',
+        "-a",
+        "--area-of-interest",
         type=str,
-        help='path to the GeoPackage or Shapefile with the area of interest'
+        help="path to the GeoPackage or Shapefile with the area of interest",
     )
     parser.add_argument(
-        '-o', '--output-dir',
+        "-o",
+        "--output-dir",
         type=str,
-        help='path to the output directory where to store the data'
+        help="path to the output directory where to store the data",
     )
     parser.add_argument(
-        '-t', '--temporal-increment-days',
+        "-t",
+        "--temporal-increment-days",
         type=int,
         default=7,
-        help='temporal increment in days'
+        help="temporal increment in days",
     )
     parser.add_argument(
-        '-c', '--target-crs',
+        "-c",
+        "--target-crs",
         type=int,
         default=2056,
-        help='target CRS for reprojection as EPSG code'
+        help="target CRS for reprojection as EPSG code",
     )
     parser.add_argument(
-        '-p', '--platform',
+        "-p",
+        "--platform",
         type=str,
-        default='sentinel-2',
-        choices=['sentinel-2', 'landsat-c2-l1', 'landsat-c2-l2'],
-        help='platform to use for data acquisition'
+        default="sentinel-2",
+        choices=["sentinel-2", "landsat-c2-l1", "landsat-c2-l2"],
+        help="platform to use for data acquisition",
     )
     parser.add_argument(
-        '-r', '--run-till-complete',
-        type=bool,
-        action='store_true',
-        help='run until all scenes are processed'
+        "-r",
+        "--run-till-complete",
+        action="store_true",
+        help="run until all scenes are processed",
     )
 
     # parse the CLI arguments
@@ -348,19 +333,19 @@ def cli() -> None:
         return
     folder_to_monitor.mkdir(exist_ok=True, parents=True)
 
-    if args.platform == 'sentinel-2':
+    if args.platform == "sentinel-2":
         constants = Sentinel2Constants
-    elif args.platform == 'landsat-c2-l1':
+    elif args.platform == "landsat-c2-l1":
         constants = LandsatC2L1Constants
-    elif args.platform == 'landsat-c2-l2':
+    elif args.platform == "landsat-c2-l2":
         constants = LandsatC2L2Constants
     else:
-        raise ValueError(f'Platform {args.platform} not supported')
+        raise ValueError(f"Platform {args.platform} not supported")
 
     # load the area of interest
     fpath_feature = Path(args.area_of_interest)
     if not fpath_feature.exists():
-        raise FileNotFoundError(f'{fpath_feature} does not exist')
+        raise FileNotFoundError(f"{fpath_feature} does not exist")
     feature = Feature.from_geoseries(gpd.read_file(fpath_feature).dissolve().geometry)
 
     # call the monitor_folder function
@@ -370,9 +355,9 @@ def cli() -> None:
         constants=constants,
         temporal_increment_days=args.temporal_increment_days,
         target_crs=args.target_crs,
-        run_till_complete=args.run_till_complete
+        run_till_complete=args.run_till_complete,
     )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     cli()
