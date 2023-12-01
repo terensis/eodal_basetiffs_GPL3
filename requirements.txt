@@ -1,2 +1,2 @@
 rio-cogeo
-git+https://github.com/EOA-team/eodal
+eodal==0.2.3
