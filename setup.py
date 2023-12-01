@@ -16,7 +16,7 @@ setup(
     long_description=open('README.md').read(),
     description='A tool to download satellite data, pre-process it and store it as cloud-optimized GeoTIFFs based on EOdal.',
     install_requires=[
-        'eodal @ git+https://github.com/EOA-team/eodal',
+        'eodal==0.2.4',
         'rio-cogeo'
     ],
 )
