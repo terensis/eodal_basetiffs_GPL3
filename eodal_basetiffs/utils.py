@@ -72,7 +72,7 @@ def indicate_complete(output_dir_scene: Path) -> None:
         output directory of the scene.
     """
     fpath_complete = output_dir_scene.joinpath(
-        f'complete.txt'
+        'complete.txt'
     )
     with open(fpath_complete, 'w') as f:
         f.write('complete')
@@ -183,10 +183,10 @@ def scale_ndvi(scene: RasterCollection) -> None:
         satellite scene
     """
     ndvi_scaled = scene['ndvi'].values * 10000 + 10000  # scale to uint16
+    geo_info_ndvi = scene['ndvi'].geo_info
     # delete the original NDVI
     del scene['NDVI']
     # and add the scaled NDVI
-    # TODO: think about the nodata value
     scene.add_band(
         Band,
         'ndvi',
@@ -194,7 +194,7 @@ def scale_ndvi(scene: RasterCollection) -> None:
         nodata=21000,
         scale=0.0001,
         offset=-1,
-        geo_info=scene['ndvi'].geo_info
+        geo_info=geo_info_ndvi
     )
 
 

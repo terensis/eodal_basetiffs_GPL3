@@ -260,9 +260,10 @@ def test_landsat_c2l2(get_data_dir, get_feature):
         assert scene_dir.joinpath(f'{scene}_rgb.tif').exists()
         assert scene_dir.joinpath(f'{scene}_fcir.tif').exists()
         assert scene_dir.joinpath('complete.txt').exists()
-        assert scene_dir.joinpath(f'{scene}_cloudy_pixel_percentage.txt').exists()
+        assert scene_dir.joinpath(
+            f'{scene}_cloudy_pixel_percentage.txt').exists()
         assert scene_dir.joinpath(f'{scene}_metadata.yaml').exists()
-    
+
         # validate output
         validate_fcir_landsat_l2(scene_dir.joinpath(f'{scene}_fcir.tif'))
         validate_rgb_landsat(scene_dir.joinpath(f'{scene}_rgb.tif'))
@@ -270,4 +271,5 @@ def test_landsat_c2l2(get_data_dir, get_feature):
         validate_yaml(scene_dir.joinpath(f'{scene}_metadata.yaml'))
 
 
-# TODO: Add test for cli function to test the full argparser (especially the store_true option)
+# TODO: Add test for cli function to test the full argparser
+# (especially the store_true option)

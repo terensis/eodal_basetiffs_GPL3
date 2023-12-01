@@ -91,7 +91,8 @@ def fetch_data(
         last_timestamp = mapper.mapper_configs.time_end
         set_latest_scene(output_dir, timestamp=last_timestamp)
         logger.info(
-            f"No data found {first_timestamp.date()} " + f"and {last_timestamp.date()}"
+            f"No data found {first_timestamp.date()} " +
+            f"and {last_timestamp.date()}"
         )
         return
 
@@ -133,7 +134,8 @@ def fetch_data(
         # save the RGB bands as GeoTIFF. This is not possible
         # for Landsat 1-4 as they do not have a blue band.
         if "blue" in scene.band_names or "blue" in scene.band_aliases:
-            fpath_rgb = output_dir_scene.joinpath(f"{timestamp.date()}_rgb.tif")
+            fpath_rgb = output_dir_scene.joinpath(
+                f"{timestamp.date()}_rgb.tif")
             scene.to_rasterio(
                 band_selection=["red", "green", "blue"],
                 fpath_raster=fpath_rgb,
@@ -145,7 +147,9 @@ def fetch_data(
             f"{timestamp.date()}_cloud_mask.tif"
         )
         scene.to_rasterio(
-            band_selection=["cloud_mask"], fpath_raster=fpath_cloud_mask, as_cog=True
+            band_selection=["cloud_mask"],
+            fpath_raster=fpath_cloud_mask,
+            as_cog=True
         )
 
         # save the FCIR bands as GeoTIFF
@@ -165,7 +169,10 @@ def fetch_data(
         # calculate the scaled NDVI
         scale_ndvi(scene)
 
-        scene.to_rasterio(band_selection=["ndvi"], fpath_raster=fpath_ndvi, as_cog=True)
+        scene.to_rasterio(
+            band_selection=["ndvi"],
+            fpath_raster=fpath_ndvi,
+            as_cog=True)
 
         # write the cloudy pixel percentage to disk
         fpath_cloudy_pixel_percentage = output_dir_scene.joinpath(
@@ -174,7 +181,8 @@ def fetch_data(
         write_cloudy_pixel_percentage(scene, fpath_cloudy_pixel_percentage)
 
         # write the scene metadata to disk
-        fpath_metadata = output_dir_scene.joinpath(f"{timestamp.date()}_metadata.yaml")
+        fpath_metadata = output_dir_scene.joinpath(
+            f"{timestamp.date()}_metadata.yaml")
         write_scene_metadata(scene, fpath_metadata)
 
         # write a file termed "complete" to disk to indicate
@@ -225,12 +233,15 @@ def monitor_folder(
         future).
     """
     # get the latest scene to determine the start date
-    last_processed_scene = get_latest_scene(folder_to_monitor, constants=constants)
+    last_processed_scene = get_latest_scene(
+        folder_to_monitor,
+        constants=constants)
     time_start = last_processed_scene + timedelta(days=1)
 
     # if time start is in the future, there is nothing to do
     if time_start > datetime.now():
-        logger.info(f"Start date {time_start.date()} is in the future. Exiting.")
+        logger.info(
+            f"Start date {time_start.date()} is in the future. Exiting.")
         return
 
     # the end time for the next query will be the time stamp of the
@@ -346,7 +357,8 @@ def cli() -> None:
     fpath_feature = Path(args.area_of_interest)
     if not fpath_feature.exists():
         raise FileNotFoundError(f"{fpath_feature} does not exist")
-    feature = Feature.from_geoseries(gpd.read_file(fpath_feature).dissolve().geometry)
+    feature = Feature.from_geoseries(
+        gpd.read_file(fpath_feature).dissolve().geometry)
 
     # call the monitor_folder function
     monitor_folder(
