@@ -1,2 +1,2 @@
 rio-cogeo
-eodal==0.2.3
+eodal==0.2.4
