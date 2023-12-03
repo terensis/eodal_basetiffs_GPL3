@@ -327,8 +327,10 @@ def cli() -> None:
     parser.add_argument(
         "-r",
         "--run-till-complete",
-        action="store_true",
-        help="run until all scenes are processed",
+        type=str,
+        choices=["True", "False"],
+        default="False",
+        help="run the script till all available scenes have been downloaded?"
     )
 
     # parse the CLI arguments
@@ -360,6 +362,14 @@ def cli() -> None:
     feature = Feature.from_geoseries(
         gpd.read_file(fpath_feature).dissolve().geometry)
 
+    # run till complete evaluation
+    if args.run_till_complete.lower() == 'false':
+        run_till_complete = False
+    elif args.run_till_complete.lower() == 'true':
+        run_till_complete = True
+    else:
+        raise ValueError("Expected either 'True' or 'False'")
+
     # call the monitor_folder function
     monitor_folder(
         folder_to_monitor=folder_to_monitor,
@@ -367,7 +377,7 @@ def cli() -> None:
         constants=constants,
         temporal_increment_days=args.temporal_increment_days,
         target_crs=args.target_crs,
-        run_till_complete=args.run_till_complete,
+        run_till_complete=run_till_complete,
     )
 
 
