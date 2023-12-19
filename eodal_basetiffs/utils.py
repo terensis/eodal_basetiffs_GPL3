@@ -171,6 +171,9 @@ def set_latest_scene(
     :param timestamp:
         time stamp of the latest scene
     """
+    # make sure the latest scene is never in the future
+    if timestamp > datetime.now():
+        timestamp = datetime.now()
     with open(output_dir.joinpath('latest_scene'), 'w+') as f:
         f.write(f'{timestamp.date()}')
 
