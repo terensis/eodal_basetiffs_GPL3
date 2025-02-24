@@ -97,7 +97,7 @@ def validate_fcir(fpath: Path) -> None:
 def validate_fcir_landsat_l2(fpath: Path) -> None:
     rc = RasterCollection.from_multi_band_raster(fpath)
     assert len(rc) == 3
-    assert rc.band_names  == ['nir08', 'red', 'green']
+    assert rc.band_names == ['nir08', 'red', 'green']
 
     for band_name in rc.band_names:
         assert rc[band_name].scale == 1e-5
